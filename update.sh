@@ -51,7 +51,12 @@ if 'goatcounter' not in s:
     # count.js on a background tab defers counting until the tab is visible --
     # by which time the attribute is gone and it has nowhere to send.
     q = chr(92) + '"'
-    snippet = ('<script>window.goatcounter={endpoint:' + q +
+    # The outer <head> title is cosmetic only - it is discarded in the same
+    # document swap, leaving document.title empty (Chrome then shows the raw
+    # URL in the tab, and GoatCounter records a blank title). The <title> that
+    # actually takes effect is this one, inside the template.
+    snippet = ('<title>GTD Revenue Proposal' + SCRIPT_CLOSE.replace('script', 'title') + chr(92) + 'n' +
+               '<script>window.goatcounter={endpoint:' + q +
                'https://mjelweezy.goatcounter.com/count' + q + '}' + SCRIPT_CLOSE + chr(92) + 'n' +
                '<script async src=' + q + 'https://gc.zgo.at/count.js' + q + '>' +
                SCRIPT_CLOSE + chr(92) + 'n')
@@ -66,6 +71,8 @@ tpl = json.loads(re.search(r'<script type="__bundler/template">(.*?)</script>',
 head = tpl[:tpl.index('</head>')]
 if 'goatcounter' not in head:
     raise SystemExit('analytics tag did not land in the template <head>')
+if '<title>GTD Revenue Proposal</title>' not in head:
+    raise SystemExit('title did not land in the template <head>')
 if s.count('gc.zgo.at/count.js') != 1:
     raise SystemExit('expected exactly one analytics tag, found %d'
                      % s.count('gc.zgo.at/count.js'))
