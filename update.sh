@@ -6,7 +6,7 @@
 # Two fixes are re-applied on every publish, because the export carries
 # neither:
 #   1. the page title (the export ships as "Bundled Page")
-#   2. the GoatCounter tag
+#   2. the GoatCounter tag (endpoint on window - see the note below)
 #
 # The tag MUST go inside the bundled template, not the outer <head>: the
 # loader ends with document.documentElement.replaceWith(...), which throws
@@ -38,7 +38,7 @@ ESC = chr(92) + 'u002F'
 HEAD_CLOSE   = '<' + ESC + 'head>'
 SCRIPT_CLOSE = '<' + ESC + 'script>'
 
-if 'data-goatcounter' not in s:
+if 'goatcounter' not in s:
     m = re.search(r'(<script type="__bundler/template">)(.*?)(</script>)', s, re.S)
     if not m:
         raise SystemExit('no bundler template found - export format changed?')
@@ -46,8 +46,15 @@ if 'data-goatcounter' not in s:
     if raw.count(HEAD_CLOSE) != 1:
         raise SystemExit('expected exactly one </head> in template, found %d'
                          % raw.count(HEAD_CLOSE))
-    snippet = ('<script data-goatcounter=\\"https://mjelweezy.goatcounter.com/count\\" '
-               'async src=\\"https://gc.zgo.at/count.js\\">' + SCRIPT_CLOSE + chr(92) + 'n')
+    # The endpoint goes on window, NOT on a data-goatcounter attribute: the DC
+    # runtime rebuilds the head after the loader's swap and strips the tag, and
+    # count.js on a background tab defers counting until the tab is visible --
+    # by which time the attribute is gone and it has nowhere to send.
+    q = chr(92) + '"'
+    snippet = ('<script>window.goatcounter={endpoint:' + q +
+               'https://mjelweezy.goatcounter.com/count' + q + '}' + SCRIPT_CLOSE + chr(92) + 'n' +
+               '<script async src=' + q + 'https://gc.zgo.at/count.js' + q + '>' +
+               SCRIPT_CLOSE + chr(92) + 'n')
     raw = raw.replace(HEAD_CLOSE, snippet + HEAD_CLOSE, 1)
     s = s[:m.start(2)] + raw + s[m.end(2):]
 
@@ -57,11 +64,11 @@ io.open(p, 'w', encoding='utf-8').write(s)
 tpl = json.loads(re.search(r'<script type="__bundler/template">(.*?)</script>',
                            s, re.S).group(1).strip())
 head = tpl[:tpl.index('</head>')]
-if 'data-goatcounter' not in head:
+if 'goatcounter' not in head:
     raise SystemExit('analytics tag did not land in the template <head>')
-if s.count('data-goatcounter') != 1:
+if s.count('gc.zgo.at/count.js') != 1:
     raise SystemExit('expected exactly one analytics tag, found %d'
-                     % s.count('data-goatcounter'))
+                     % s.count('gc.zgo.at/count.js'))
 print('ok: title set, one analytics tag in template <head>, %d slides'
       % tpl.count('<section data-label='))
 PY
