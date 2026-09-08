@@ -55,9 +55,65 @@ if 'goatcounter' not in s:
     # document swap, leaving document.title empty (Chrome then shows the raw
     # URL in the tab, and GoatCounter records a blank title). The <title> that
     # actually takes effect is this one, inside the template.
+    #
+    # The endpoint goes on window rather than a data-goatcounter attribute:
+    # the DC runtime strips the tag after it executes, and count.js resolves
+    # its endpoint at count time - on a background tab that is only once the
+    # tab becomes visible, long after the attribute is gone.
+    js = """window.goatcounter = {endpoint: "ENDPOINT"};
+
+// Per-slide events. The deck fires `slidechange` on document; count a slide
+// once per load, and only once it has been on screen for MIN_MS, so paging
+// through to slide 9 does not log every slide on the way there.
+(function () {
+  var MIN_MS = 2000, seen = {}, cur = null, since = 0, queue = [], tries = 0;
+
+  function flush() {
+    if (!(window.goatcounter && window.goatcounter.count)) {
+      if (tries++ < 20) setTimeout(flush, 500);   // count.js still loading
+      return;
+    }
+    while (queue.length) window.goatcounter.count(queue.shift());
+  }
+
+  function leave() {
+    if (!cur || seen[cur.path] || Date.now() - since < MIN_MS) return;
+    seen[cur.path] = 1;
+    queue.push({path: cur.path, title: cur.title, event: true});
+    flush();
+  }
+
+  function slug(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  document.addEventListener("slidechange", function (e) {
+    leave();
+    var d = e.detail || {};
+    var n = (d.index == null ? 0 : d.index) + 1;
+    var nn = (n < 10 ? "0" : "") + n;
+    var label = (d.slide && d.slide.getAttribute("data-label")) || "";
+    cur = {
+      path: "slide-" + nn + (label ? "-" + slug(label) : ""),
+      title: "Slide " + nn + (label ? " - " + label : "")
+    };
+    since = Date.now();
+  });
+
+  // count() uses navigator.sendBeacon, so the slide being read when the tab
+  // closes still gets recorded.
+  document.addEventListener("visibilitychange", function () { if (document.hidden) leave(); });
+  window.addEventListener("pagehide", leave);
+})();
+""".replace('ENDPOINT', 'https://mjelweezy.goatcounter.com/count')
+
+    # Escape for the JSON template string: json.dumps handles quotes,
+    # backslashes and newlines; "/" in a closing tag additionally becomes
+    # \u002F so it cannot terminate the host <script> element.
+    esc = json.dumps(js)[1:-1].replace('</', '<' + chr(92) + 'u002F')
+
     snippet = ('<title>GTD Revenue Proposal' + SCRIPT_CLOSE.replace('script', 'title') + chr(92) + 'n' +
-               '<script>window.goatcounter={endpoint:' + q +
-               'https://mjelweezy.goatcounter.com/count' + q + '}' + SCRIPT_CLOSE + chr(92) + 'n' +
+               '<script>' + chr(92) + 'n' + esc + SCRIPT_CLOSE + chr(92) + 'n' +
                '<script async src=' + q + 'https://gc.zgo.at/count.js' + q + '>' +
                SCRIPT_CLOSE + chr(92) + 'n')
     raw = raw.replace(HEAD_CLOSE, snippet + HEAD_CLOSE, 1)
